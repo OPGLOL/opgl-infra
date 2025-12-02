@@ -22,6 +22,37 @@ services:
       timeout: 5s
       retries: 5
 
+  # Auth Service - Authentication, JWT, API keys, and rate limiting
+  opgl-auth-service:
+    build:
+      context: ../opgl-auth-service
+      dockerfile: Dockerfile
+    container_name: opgl-auth-service
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=opgl_gateway
+      - DB_USER=opgl_user
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=168h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - opgl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
   # Data Service - Direct interface to Riot API
   opgl-data-service:
     build:
@@ -43,7 +74,7 @@ services:
       retries: 3
       start_period: 10s
 
-  # Gateway Service - API Gateway and orchestrator
+  # Gateway Service - API Gateway and orchestrator (no DB!)
   opgl-gateway-service:
     build:
       context: ../opgl-gateway-service
@@ -52,20 +83,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SERVER_PORT=8080
-      - DATA_SERVICE_URL=http://opgl-data-service:8081
-      - CORTEX_SERVICE_URL=http://opgl-cortex-engine-service:8082
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=opgl_gateway
-      - DB_USER=opgl_user
-      - DB_PASSWORD=${DB_PASSWORD}
+      - PORT=8080
+      - OPGL_DATA_URL=http://opgl-data-service:8081
+      - OPGL_CORTEX_URL=http://opgl-cortex-engine-service:8082
+      - OPGL_AUTH_URL=http://opgl-auth-service:8083
     depends_on:
       opgl-data-service:
         condition: service_healthy
       opgl-cortex-engine-service:
         condition: service_healthy
-      postgres:
+      opgl-auth-service:
         condition: service_healthy
     networks:
       - opgl-network
